@@ -27,7 +27,9 @@ const printLabel = (patientObj) => {
   const fullname = patientObj.name;
   const visitNo = patientObj.visit_number;
   const pid = patientObj.id;
-  const tests = "cbc-Ha1c";
+  const tests = patientObj.labrequests.reduce((prev,curr)=>{
+    return `${prev} - ${curr.name}`
+  },' ');
   console.log(fullname)
   const zplCommand = `
 Q200,400
@@ -37,8 +39,9 @@ D10
 R
 N
 LO15,4,340,4
-A15,15,0,3,1,1,N,"${visitNo}"
-A60,15,0,3,1,1,N,"${fullname}"
+A15,45,0,3,1,1,N,"${visitNo}"
+A15,130,0,3,1,1,N,"${tests}"
+A15,15,0,3,1,1,N,"${fullname}"
 ${barcode(60, 40, 0, 1, 2, 3, 60, "B", pid)}
 P1
 `;
