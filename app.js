@@ -7,6 +7,13 @@ import bodyParser from "body-parser";
 const app = express();
 app.use(express.json());
 app.use(cors());
+function splitText(text, maxLength) {
+  const result = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    result.push(text.substring(i, i + maxLength));
+  }
+  return result;
+}
 
 const barcode = (
   x,
@@ -23,32 +30,40 @@ const barcode = (
 };
 
 const printLabel = (patientObj) => {
-  const printerName = "ZDesigner GC420t";
-  const fullname = patientObj.name;
-  const visitNo = patientObj.visit_number;
+  const printerName = "ZDesigner GK888t (EPL)";
+  console.log(patientObj)
+  const fullname = patientObj.patient.name;
+  const visitNo = patientObj.patient.visit_number;
   const pid = patientObj.id;
-  const tests = patientObj.labrequests.reduce((prev,curr)=>{
+  const tests = patientObj.patient.lab_requests.reduce((prev,curr)=>{
     return `${prev} - ${curr.name}`
   },' ');
   console.log(fullname)
-  const zplCommand = `
-Q200,400
-q400
+
+const lines = splitText(tests, 20); // split into chunks of 20 chars
+let textZpl = '';
+
+lines.forEach((line, i) => {
+  // 40 = vertical spacing between lines
+  textZpl += `A15,${100 + i * 20},0,1,1,1,N,"${line}"\n`;
+});
+
+const zplCommand = `
+Q200,312
+q312
 S1
 D10
 R
 N
-LO15,4,340,4
-A15,45,0,3,1,1,N,"${visitNo}"
-A15,130,0,3,1,1,N,"${tests}"
-A15,15,0,3,1,1,N,"${fullname}"
-${barcode(60, 40, 0, 1, 2, 3, 60, "B", pid)}
+LO15,1,300,1
+A15,5,0,3,2,2,N,"${visitNo}"
+${textZpl}
+${barcode(90, 20, 0, 1, 2, 3, 50, "B", pid)}
 P1
 `;
- 
   printDirect({
     data: zplCommand,
-    printer: printerName,
+    printer: undefined,
     type: "RAW",
     
     success: function (jobID) {
