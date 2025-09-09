@@ -1,0 +1,2 @@
+2024-10-20 20:08:17 - Starting C:\Program Files\nodejs\node.exe  --harmony --max_old_space_size=4096 C:\zebra\node_modules\node-windows\lib\wrapper.js --file C:\zebra\app.js --scriptoptions= --log "jawad zebra  wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2024-10-20 20:08:17 - Started 4464

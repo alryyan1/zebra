@@ -1,0 +1,69 @@
+node:internal/modules/cjs/loader:1717
+  return process.dlopen(module, path.toNamespacedPath(filename));
+                 ^
+
+Error: The module '\\?\C:\zebra\node_modules\printer\lib\node_printer.node'
+was compiled against a different Node.js version using
+NODE_MODULE_VERSION 115. This version of Node.js requires
+NODE_MODULE_VERSION 127. Please try re-compiling or re-installing
+the module (for instance, using `npm rebuild` or `npm install`).
+    at Module._extensions..node (node:internal/modules/cjs/loader:1717:18)
+    at Module.load (node:internal/modules/cjs/loader:1317:32)
+    at Module._load (node:internal/modules/cjs/loader:1127:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:217:24)
+    at Module.require (node:internal/modules/cjs/loader:1339:12)
+    at require (node:internal/modules/helpers:135:16)
+    at Object.<anonymous> (C:\zebra\node_modules\printer\lib\printer.js:10:22)
+    at Module._compile (node:internal/modules/cjs/loader:1546:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1691:10) {
+  code: 'ERR_DLOPEN_FAILED'
+}
+
+Node.js v22.9.0
+node:internal/modules/cjs/loader:1717
+  return process.dlopen(module, path.toNamespacedPath(filename));
+                 ^
+
+Error: The module '\\?\C:\zebra\node_modules\printer\lib\node_printer.node'
+was compiled against a different Node.js version using
+NODE_MODULE_VERSION 115. This version of Node.js requires
+NODE_MODULE_VERSION 127. Please try re-compiling or re-installing
+the module (for instance, using `npm rebuild` or `npm install`).
+    at Module._extensions..node (node:internal/modules/cjs/loader:1717:18)
+    at Module.load (node:internal/modules/cjs/loader:1317:32)
+    at Module._load (node:internal/modules/cjs/loader:1127:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:217:24)
+    at Module.require (node:internal/modules/cjs/loader:1339:12)
+    at require (node:internal/modules/helpers:135:16)
+    at Object.<anonymous> (C:\zebra\node_modules\printer\lib\printer.js:10:22)
+    at Module._compile (node:internal/modules/cjs/loader:1546:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1691:10) {
+  code: 'ERR_DLOPEN_FAILED'
+}
+
+Node.js v22.9.0
+node:internal/modules/cjs/loader:1717
+  return process.dlopen(module, path.toNamespacedPath(filename));
+                 ^
+
+Error: The module '\\?\C:\zebra\node_modules\printer\lib\node_printer.node'
+was compiled against a different Node.js version using
+NODE_MODULE_VERSION 115. This version of Node.js requires
+NODE_MODULE_VERSION 127. Please try re-compiling or re-installing
+the module (for instance, using `npm rebuild` or `npm install`).
+    at Module._extensions..node (node:internal/modules/cjs/loader:1717:18)
+    at Module.load (node:internal/modules/cjs/loader:1317:32)
+    at Module._load (node:internal/modules/cjs/loader:1127:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:217:24)
+    at Module.require (node:internal/modules/cjs/loader:1339:12)
+    at require (node:internal/modules/helpers:135:16)
+    at Object.<anonymous> (C:\zebra\node_modules\printer\lib\printer.js:10:22)
+    at Module._compile (node:internal/modules/cjs/loader:1546:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1691:10) {
+  code: 'ERR_DLOPEN_FAILED'
+}
+
+Node.js v22.9.0
