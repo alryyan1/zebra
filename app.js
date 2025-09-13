@@ -14,6 +14,13 @@ function splitText(text, maxLength) {
   }
   return result;
 }
+function splitText(text, maxLength) {
+  const result = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    result.push(text.substring(i, i + maxLength));
+  }
+  return result;
+}
 
 const barcode = (
   x,
