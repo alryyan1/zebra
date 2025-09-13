@@ -7,6 +7,13 @@ import bodyParser from "body-parser";
 const app = express();
 app.use(express.json());
 app.use(cors());
+function splitText(text, maxLength) {
+  const result = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    result.push(text.substring(i, i + maxLength));
+  }
+  return result;
+}
 
 const barcode = (
   x,
@@ -23,43 +30,75 @@ const barcode = (
 };
 
 const printLabel = (patientObj) => {
-  const printerName = "ZDesigner GC420t";
-  const fullname = patientObj.name;
-  const visitNo = patientObj.visit_number;
+  const printerName = "ZDesigner ZD888-203dpi ZPL";
+  const fullname = patientObj.patient.name;
+  const visitNo = patientObj.patient.visit_number;
   const pid = patientObj.id;
-  const tests = patientObj.labrequests.reduce((prev,curr)=>{
-    return `${prev} - ${curr.name}`
-  },' ');
-  console.log(fullname)
-  const zplCommand = `
-Q200,400
-q400
+
+  // Check if lab_requests exists and is an array
+  if (!patientObj.patient.lab_requests || !Array.isArray(patientObj.patient.lab_requests)) {
+    console.error("No lab requests found for patient");
+    return;
+  }
+
+  console.log(patientObj.patient.lab_requests,'lab_requests')
+  // Group tests by container - filter out undefined containers
+  const containers = patientObj.patient.lab_requests
+    .map(req => req.main_test && req.main_test.container ? req.main_test.container : null)
+    .filter(container => container && container.id);
+
+  // Check if we have any valid containers
+  if (containers.length === 0) {
+    console.error("No valid containers found for patient");
+    return;
+  }
+
+  containers.forEach(container => {
+    // Get tests for this container
+    const testsAccordingToContainer = patientObj.patient.lab_requests
+      .filter(req => req.main_test && req.main_test.container && req.main_test.container.id === container.id)
+      .map(req => req.name);
+
+    // Build the test string
+    let tests = testsAccordingToContainer.join(" - ");
+
+    // Split tests into multiple lines (max 20 chars each line)
+    const lines = splitText(tests, 20);
+    let textZpl = '';
+    lines.forEach((line, i) => {
+      textZpl += `A15,${100 + i * 20},0,1,1,1,N,"${line}"\n`;
+    });
+
+    // Build ZPL command (similar to PHP version)
+    const zplCommand = `
+Q200,312
+q312
 S1
-D10
+D15
 R
 N
-LO15,4,340,4
-A15,45,0,3,1,1,N,"${visitNo}"
-A15,130,0,3,1,1,N,"${tests}"
-A15,15,0,3,1,1,N,"${fullname}"
-${barcode(60, 40, 0, 1, 2, 3, 60, "B", pid)}
+LO15,5,300,1
+A15,10,0,3,2,2,N,"${visitNo}"
+${textZpl}
+${barcode(110, 30, 0, 1, 2, 3, 50, "B", pid)}
 P1
 `;
- 
-  printDirect({
-    data: zplCommand,
-    printer: printerName,
-    type: "RAW",
-    
-    success: function (jobID) {
-      console.log(`Printed with job ID: ${jobID}`);
-    },
-    error: function (err) {
-      console.error(`Error printing: ${err}`);
-    },
-  });
 
+    // Send print job
+    printDirect({
+      data: zplCommand,
+      printer: printerName,
+      type: "RAW",
+      success: function (jobID) {
+        console.log(`Printed label for container ${container.id} with job ID: ${jobID}`);
+      },
+      error: function (err) {
+        console.error(`Error printing: ${err}`);
+      },
+    });
+  });
 };
+
 app.post("/", function (req, res) {
  // res.send("Hello World!");
   let data = req.body;

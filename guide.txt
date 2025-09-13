@@ -1,0 +1,3 @@
+first install nvpm
+next type nvm install 20
+node app 
