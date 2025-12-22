@@ -1,19 +1,11 @@
-import Printer from "node-printer";
-import { getPrinters } from "printer";
 import { printDirect } from "printer";
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
+
 const app = express();
 app.use(express.json());
 app.use(cors());
-function splitText(text, maxLength) {
-  const result = [];
-  for (let i = 0; i < text.length; i += maxLength) {
-    result.push(text.substring(i, i + maxLength));
-  }
-  return result;
-}
+
 function splitText(text, maxLength) {
   const result = [];
   for (let i = 0; i < text.length; i += maxLength) {
@@ -38,33 +30,50 @@ const barcode = (
 
 const printLabel = (patientObj) => {
   const printerName = "ZDesigner ZD888-203dpi ZPL";
-  const fullname = patientObj.patient.name;
-  const visitNo = patientObj.patient.visit_number;
-  const pid = patientObj.id;
+  
+  // Handle different data structures - support both nested and flat structures
+  const patient = patientObj.patient || patientObj;
+  const fullname = patient.name || patientObj.name;
+  const visitNo = patient.visit_number || patientObj.visit_number || patientObj.visit_id;
+  const pid = patientObj.id || patientObj.patient_id || patient.id;
 
-  // Check if lab_requests exists and is an array
-  if (!patientObj.patient.lab_requests || !Array.isArray(patientObj.patient.lab_requests)) {
-    console.error("No lab requests found for patient");
+  // Check if lab_requests exists and is an array (try different possible paths)
+  const labRequests = patient.lab_requests || patientObj.lab_requests || patient.labRequests || [];
+  
+  if (!Array.isArray(labRequests) || labRequests.length === 0) {
+    console.error("No lab requests found for patient", JSON.stringify(patientObj, null, 2));
     return;
   }
 
-  console.log(patientObj.patient.lab_requests,'lab_requests')
+  console.log(labRequests, 'lab_requests');
+  
   // Group tests by container - filter out undefined containers
-  const containers = patientObj.patient.lab_requests
-    .map(req => req.main_test && req.main_test.container ? req.main_test.container : null)
+  const containers = labRequests
+    .map(req => {
+      const mainTest = req.main_test || req.mainTest;
+      return mainTest && mainTest.container ? mainTest.container : null;
+    })
     .filter(container => container && container.id);
 
+  // Remove duplicate containers by id
+  const uniqueContainers = containers.filter((container, index, self) => 
+    index === self.findIndex(c => c.id === container.id)
+  );
+
   // Check if we have any valid containers
-  if (containers.length === 0) {
+  if (uniqueContainers.length === 0) {
     console.error("No valid containers found for patient");
     return;
   }
 
-  containers.forEach(container => {
+  uniqueContainers.forEach(container => {
     // Get tests for this container
-    const testsAccordingToContainer = patientObj.patient.lab_requests
-      .filter(req => req.main_test && req.main_test.container && req.main_test.container.id === container.id)
-      .map(req => req.name);
+    const testsAccordingToContainer = labRequests
+      .filter(req => {
+        const mainTest = req.main_test || req.mainTest;
+        return mainTest && mainTest.container && mainTest.container.id === container.id;
+      })
+      .map(req => req.name || req.test_name || 'Unknown Test');
 
     // Build the test string
     let tests = testsAccordingToContainer.join(" - ");
@@ -107,12 +116,20 @@ P1
 };
 
 app.post("/", function (req, res) {
- // res.send("Hello World!");
-  let data = req.body;
-  // console.log(data,'data')
+  try {
+    let data = req.body;
+    console.log('Received data:', JSON.stringify(data, null, 2));
 
-  printLabel(data);
-  res.json({status:'success'})
+    if (!data) {
+      return res.status(400).json({ status: 'error', message: 'No data received' });
+    }
+
+    printLabel(data);
+    res.json({ status: 'success', message: 'Print job sent to printer' });
+  } catch (error) {
+    console.error('Error processing print request:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
 });
 
 app.listen(5000, () => {
