@@ -86,23 +86,29 @@ const printLabel = (patientObj, printerNameOverride = null) => {
     const visitNo = patient.visit_number || patientObj.visit_number || patientObj.visit_id;
     const pid = patientObj.id || patientObj.patient_id || patient.id;
 
-    // Check if lab_requests exists and is an array (try different possible paths)
-    const labRequests = patient.lab_requests || patientObj.lab_requests || patient.labRequests || [];
+    // Check if lab_requests exists - try top level first, then nested under patient
+    const labRequests = patientObj.lab_requests || patient.lab_requests || patientObj.labRequests || patient.labRequests || [];
     
     if (!Array.isArray(labRequests) || labRequests.length === 0) {
-      console.error("No lab requests found for patient", JSON.stringify(patientObj, null, 2));
+      console.error("No lab requests found for patient");
+      console.error("Available keys in payload:", Object.keys(patientObj));
+      console.error("Patient object keys:", patient ? Object.keys(patient) : "No patient object");
       return;
     }
 
-    console.log(labRequests, 'lab_requests');
+    console.log(`Found ${labRequests.length} lab request(s)`);
+    console.log('Lab requests structure:', JSON.stringify(labRequests[0], null, 2));
     
     // Group tests by container - filter out undefined containers
     const containers = labRequests
       .map(req => {
         const mainTest = req.main_test || req.mainTest;
-        return mainTest && mainTest.container ? mainTest.container : null;
+        if (mainTest && mainTest.container) {
+          return mainTest.container;
+        }
+        return null;
       })
-      .filter(container => container && container.id);
+      .filter(container => container !== null && container.id);
 
     // Remove duplicate containers by id
     const uniqueContainers = containers.filter((container, index, self) => 
@@ -111,21 +117,31 @@ const printLabel = (patientObj, printerNameOverride = null) => {
 
     // Check if we have any valid containers
     if (uniqueContainers.length === 0) {
-      console.error("No valid containers found for patient");
+      console.error("No valid containers found in lab requests");
+      console.error("Containers extracted:", containers);
       return;
     }
 
+    console.log(`Found ${uniqueContainers.length} unique container(s):`, uniqueContainers.map(c => c.container_name || c.name || `Container ${c.id}`));
+
     uniqueContainers.forEach(container => {
-    // Get tests for this container
-    const testsAccordingToContainer = labRequests
-      .filter(req => {
-        const mainTest = req.main_test || req.mainTest;
-        return mainTest && mainTest.container && mainTest.container.id === container.id;
-      })
-      .map(req => req.name || req.test_name || 'Unknown Test');
+      // Get tests for this container
+      const testsAccordingToContainer = labRequests
+        .filter(req => {
+          const mainTest = req.main_test || req.mainTest;
+          return mainTest && mainTest.container && mainTest.container.id === container.id;
+        })
+        .map(req => {
+          const mainTest = req.main_test || req.mainTest;
+          // Try different possible property names for test name
+          return mainTest?.main_test_name || mainTest?.name || req.name || req.test_name || 'Unknown Test';
+        });
 
     // Build the test string
     let tests = testsAccordingToContainer.join(" - ");
+    
+    console.log(`Container ${container.id} (${container.container_name || container.name || 'Unknown'}): ${testsAccordingToContainer.length} test(s)`);
+    console.log(`Tests: ${tests}`);
 
     // Split tests into multiple lines (max 25 chars each line for better readability)
     const lines = splitText(tests, 25);
@@ -168,8 +184,9 @@ const printLabel = (patientObj, printerNameOverride = null) => {
     });
     
     // Print container name if available
-    if (container.name) {
-      zplCommand += createZPLText(20, textY + (lines.length * 25) + 10, `Container: ${container.name}`, 20, 18, "N");
+    const containerName = container.container_name || container.name;
+    if (containerName) {
+      zplCommand += createZPLText(20, textY + (lines.length * 25) + 10, `Container: ${containerName}`, 20, 18, "N");
     }
     
     zplCommand += `^XZ`; // End label format
