@@ -1,10 +1,39 @@
-import { printDirect } from "printer";
+import { printDirect, getPrinters } from "printer";
 import express from "express";
 import cors from "cors";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+// Get printer name from environment variable or default to "zebra"
+// Common ZD888 printer names: "zebra", "ZDesigner ZD888", "ZD888", "Zebra ZD888"
+const PRINTER_NAME = process.env.PRINTER_NAME || "zebra";
+
+// Function to find ZD888 printer if exact name doesn't match
+const findZD888Printer = (callback) => {
+  getPrinters(function(err, printers) {
+    if (err || !printers) {
+      return callback(null, PRINTER_NAME);
+    }
+    
+    // Look for ZD888 in printer names (case insensitive)
+    const zd888Printer = printers.find(p => 
+      p.name.toLowerCase().includes('zd888') || 
+      p.name.toLowerCase().includes('zebra') ||
+      p.name.toLowerCase() === 'zebra'
+    );
+    
+    if (zd888Printer) {
+      console.log(`Found ZD888 printer: "${zd888Printer.name}"`);
+      callback(null, zd888Printer.name);
+    } else {
+      console.log(`Using default printer name: "${PRINTER_NAME}"`);
+      console.log('Available printers:', printers.map(p => p.name).join(', '));
+      callback(null, PRINTER_NAME);
+    }
+  });
+};
 
 function splitText(text, maxLength) {
   const result = [];
@@ -14,59 +43,79 @@ function splitText(text, maxLength) {
   return result;
 }
 
-const barcode = (
-  x,
-  y,
-  rotation,
-  barcodeSelection,
-  narrowBarcodeWidth,
-  WideBarcodeWidth,
-  height,
-  printHuman,
-  data
-) => {
-  return `B${x},${y},${rotation},${barcodeSelection},${narrowBarcodeWidth},${WideBarcodeWidth},${height},${printHuman},"${data}"`;
+// ZPL barcode command for Zebra ZD888
+// ^BC = Code 128 barcode
+// Parameters: height, print interpretation line (Y/N), print check digit (Y/N), mode (N/U/A/D)
+const createZPLBarcode = (x, y, height, data, showText = "Y") => {
+  // ^FO = Field Origin (x, y position)
+  // ^BY = Barcode field default (module width, wide bar width ratio, height)
+  // ^BC = Code 128 barcode
+  // ^FD = Field Data (the barcode data)
+  // ^FS = Field Separator (ends the field)
+  return `^FO${x},${y}^BY2,3,${height}^BCN,${height},Y,N,N^FD${data}^FS`;
 };
 
-const printLabel = (patientObj) => {
-  const printerName = "ZDesigner ZD888-203dpi ZPL";
-  
-  // Handle different data structures - support both nested and flat structures
-  const patient = patientObj.patient || patientObj;
-  const fullname = patient.name || patientObj.name;
-  const visitNo = patient.visit_number || patientObj.visit_number || patientObj.visit_id;
-  const pid = patientObj.id || patientObj.patient_id || patient.id;
+// ZPL text command for Zebra ZD888
+// ^A0 = Font 0 (default scalable font), N = normal orientation
+// Parameters: font, rotation, height, width
+const createZPLText = (x, y, text, fontHeight = 30, fontWidth = 30, rotation = "N") => {
+  // Escape special characters in text
+  const escapedText = text.replace(/\\/g, "\\\\").replace(/\^/g, "\\^").replace(/~/g, "\\~");
+  // ^FO = Field Origin
+  // ^A0 = Font 0, N = normal
+  // ^FD = Field Data
+  // ^FS = Field Separator
+  return `^FO${x},${y}^A0${rotation},${fontHeight},${fontWidth}^FD${escapedText}^FS`;
+};
 
-  // Check if lab_requests exists and is an array (try different possible paths)
-  const labRequests = patient.lab_requests || patientObj.lab_requests || patient.labRequests || [];
-  
-  if (!Array.isArray(labRequests) || labRequests.length === 0) {
-    console.error("No lab requests found for patient", JSON.stringify(patientObj, null, 2));
-    return;
-  }
+// ZPL box/line command
+const createZPLBox = (x, y, width, height, lineThickness = 2) => {
+  // ^FO = Field Origin
+  // ^GB = Graphic Box (width, height, line thickness, line color, rounding)
+  // ^FS = Field Separator
+  return `^FO${x},${y}^GB${width},${height},${lineThickness},B,0^FS`;
+};
 
-  console.log(labRequests, 'lab_requests');
-  
-  // Group tests by container - filter out undefined containers
-  const containers = labRequests
-    .map(req => {
-      const mainTest = req.main_test || req.mainTest;
-      return mainTest && mainTest.container ? mainTest.container : null;
-    })
-    .filter(container => container && container.id);
+const printLabel = (patientObj, printerNameOverride = null) => {
+  const usePrinter = (printerName) => {
+    console.log(`Attempting to print to printer: "${printerName}"`);
+    
+    // Handle different data structures - support both nested and flat structures
+    const patient = patientObj.patient || patientObj;
+    const fullname = patient.name || patientObj.name;
+    const visitNo = patient.visit_number || patientObj.visit_number || patientObj.visit_id;
+    const pid = patientObj.id || patientObj.patient_id || patient.id;
 
-  // Remove duplicate containers by id
-  const uniqueContainers = containers.filter((container, index, self) => 
-    index === self.findIndex(c => c.id === container.id)
-  );
+    // Check if lab_requests exists and is an array (try different possible paths)
+    const labRequests = patient.lab_requests || patientObj.lab_requests || patient.labRequests || [];
+    
+    if (!Array.isArray(labRequests) || labRequests.length === 0) {
+      console.error("No lab requests found for patient", JSON.stringify(patientObj, null, 2));
+      return;
+    }
 
-  // Check if we have any valid containers
-  if (uniqueContainers.length === 0) {
-    console.error("No valid containers found for patient");
-    return;
-  }
+    console.log(labRequests, 'lab_requests');
+    
+    // Group tests by container - filter out undefined containers
+    const containers = labRequests
+      .map(req => {
+        const mainTest = req.main_test || req.mainTest;
+        return mainTest && mainTest.container ? mainTest.container : null;
+      })
+      .filter(container => container && container.id);
 
-  uniqueContainers.forEach(container => {
+    // Remove duplicate containers by id
+    const uniqueContainers = containers.filter((container, index, self) => 
+      index === self.findIndex(c => c.id === container.id)
+    );
+
+    // Check if we have any valid containers
+    if (uniqueContainers.length === 0) {
+      console.error("No valid containers found for patient");
+      return;
+    }
+
+    uniqueContainers.forEach(container => {
     // Get tests for this container
     const testsAccordingToContainer = labRequests
       .filter(req => {
@@ -78,27 +127,55 @@ const printLabel = (patientObj) => {
     // Build the test string
     let tests = testsAccordingToContainer.join(" - ");
 
-    // Split tests into multiple lines (max 20 chars each line)
-    const lines = splitText(tests, 20);
-    let textZpl = '';
+    // Split tests into multiple lines (max 25 chars each line for better readability)
+    const lines = splitText(tests, 25);
+    
+    // Build ZPL command for Zebra ZD888
+    // ^XA = Start of label format
+    // ^MM = Print mode (T = tear-off, C = cut, P = peel-off)
+    // ^PW = Print width (in dots, 203 dpi = ~2.5 inches = 508 dots for 2.5")
+    // ^LL = Label length (in dots)
+    // ^LH = Label home position (x, y)
+    // ^PR = Print speed (A = 2 ips, B = 3 ips, C = 4 ips, D = 6 ips, E = 8 ips, F = 10 ips)
+    // ^MD = Media darkness (0-30, default 15)
+    
+    let zplCommand = `^XA`; // Start label format
+    zplCommand += `^MMT`; // Tear-off mode
+    zplCommand += `^PW508`; // Print width: 2.5 inches at 203 dpi (508 dots)
+    zplCommand += `^LL312`; // Label length: ~1.5 inches (312 dots)
+    zplCommand += `^LH0,0`; // Label home position
+    zplCommand += `^PRC`; // Print speed: 4 inches per second
+    zplCommand += `^MD15`; // Media darkness: 15 (medium)
+    zplCommand += `^BY2`; // Barcode field default: module width 2
+    
+    // Print border/box around label
+    zplCommand += createZPLBox(10, 5, 488, 302, 2);
+    
+    // Print visit number at top (larger font)
+    zplCommand += createZPLText(20, 15, visitNo || "N/A", 40, 30, "N");
+    
+    // Print barcode (Code 128) - position: x=200, y=60, height=80
+    // Using visit ID or patient ID for barcode
+    const barcodeData = String(pid || visitNo || "0");
+    zplCommand += createZPLBarcode(200, 60, 80, barcodeData, "Y");
+    
+    // Print test names below barcode
+    let textY = 150; // Start position for test names
     lines.forEach((line, i) => {
-      textZpl += `A15,${100 + i * 20},0,1,1,1,N,"${line}"\n`;
+      if (line.trim()) {
+        zplCommand += createZPLText(20, textY + (i * 25), line.trim(), 25, 20, "N");
+      }
     });
-
-    // Build ZPL command (similar to PHP version)
-    const zplCommand = `
-Q200,312
-q312
-S1
-D15
-R
-N
-LO15,5,300,1
-A15,10,0,3,2,2,N,"${visitNo}"
-${textZpl}
-${barcode(110, 30, 0, 1, 2, 3, 50, "B", pid)}
-P1
-`;
+    
+    // Print container name if available
+    if (container.name) {
+      zplCommand += createZPLText(20, textY + (lines.length * 25) + 10, `Container: ${container.name}`, 20, 18, "N");
+    }
+    
+    zplCommand += `^XZ`; // End label format
+    
+    // Log the ZPL command for debugging (first 500 chars)
+    console.log(`ZPL Command (preview): ${zplCommand.substring(0, 500)}...`);
 
     // Send print job
     printDirect({
@@ -106,14 +183,46 @@ P1
       printer: printerName,
       type: "RAW",
       success: function (jobID) {
-        console.log(`Printed label for container ${container.id} with job ID: ${jobID}`);
+        console.log(`✓ Printed label for container ${container.id} with job ID: ${jobID}`);
       },
       error: function (err) {
-        console.error(`Error printing: ${err}`);
+        console.error(`✗ Error printing to "${printerName}":`, err);
+        // List available printers to help debug
+        getPrinters(function(printerErr, printers) {
+          if (!printerErr && printers) {
+            console.log('Available printers:', printers.map(p => p.name).join(', '));
+            console.log('Try setting PRINTER_NAME environment variable to one of the above names');
+          }
+        });
       },
     });
   });
+  };
+  
+  // Use override if provided, otherwise auto-detect or use default
+  if (printerNameOverride) {
+    usePrinter(printerNameOverride);
+  } else {
+    // Auto-detect ZD888 printer
+    findZD888Printer((err, detectedPrinterName) => {
+      usePrinter(detectedPrinterName);
+    });
+  }
 };
+
+// Endpoint to list available printers
+app.get("/printers", function (req, res) {
+  getPrinters(function(err, printers) {
+    if (err) {
+      return res.status(500).json({ status: 'error', message: err.message, printers: [] });
+    }
+    res.json({ 
+      status: 'success', 
+      printers: printers.map(p => ({ name: p.name, status: p.status })),
+      currentPrinter: PRINTER_NAME
+    });
+  });
+});
 
 app.post("/", function (req, res) {
   try {
@@ -124,8 +233,19 @@ app.post("/", function (req, res) {
       return res.status(400).json({ status: 'error', message: 'No data received' });
     }
 
-    printLabel(data);
-    res.json({ status: 'success', message: 'Print job sent to printer' });
+    // Allow printer name override via request body or query parameter
+    const printerName = data.printer_name || req.query.printer_name || null;
+    
+    // Start printing (async)
+    printLabel(data, printerName);
+    
+    // Return immediately (printing happens asynchronously)
+    res.json({ 
+      status: 'success', 
+      message: 'Print job(s) sent to printer',
+      printer: printerName || 'auto-detecting ZD888...',
+      note: 'Printing is asynchronous. Check console logs for print status.'
+    });
   } catch (error) {
     console.error('Error processing print request:', error);
     res.status(500).json({ status: 'error', message: error.message });
@@ -136,28 +256,26 @@ app.listen(5000, () => {
   console.log("Example app listening at http://localhost:5000");
 });
 
-// Breakdown of the EPL Command
-// B: This indicates the beginning of a barcode field. The B command is used to print barcodes.
+// ZPL Command Breakdown for Zebra ZD888:
+// ^XA - Start of label format
+// ^MMT - Print mode: Tear-off
+// ^PW508 - Print width: 508 dots (2.5 inches at 203 dpi)
+// ^LL312 - Label length: 312 dots (~1.5 inches)
+// ^LH0,0 - Label home position (x=0, y=0)
+// ^PRC - Print speed: 4 inches per second
+// ^MD15 - Media darkness: 15 (medium darkness)
+// ^BY2 - Barcode module width: 2 dots
+// ^FO - Field Origin (sets x,y position)
+// ^A0 - Font 0 (default scalable font)
+// ^BC - Code 128 barcode
+// ^FD - Field Data (the actual text/barcode data)
+// ^FS - Field Separator (ends the field)
+// ^GB - Graphic Box (draws a box/line)
+// ^XZ - End of label format
 
-// 50: This is the X coordinate (field origin) in dots. It specifies the horizontal position of the barcode on the label, starting from the left edge. In this case, the barcode will start 50 dots from the left.
-
-// 80: This is the Y coordinate (field origin) in dots. It indicates the vertical position of the barcode on the label, starting from the top edge. Here, the barcode will start 80 dots down from the top edge of the label.
-
-// 0: This specifies the orientation of the barcode:
-
-// 0: No rotation (the barcode is printed normally).
-// Other values (like 1, 2, or 3) would rotate the barcode 90, 180, or 270 degrees, respectively.
-// 1: This represents the barcode type:
-
-// In this case, 1 indicates that a Code 128 barcode will be used. Different values correspond to different barcode types (e.g., Code 39, UPC, etc.).
-// 2: This sets the narrow bar width multiplier. It affects the width of the narrowest bar in the barcode. A value of 2 means the narrow bars will be twice as wide as the default width.
-
-// 5: This specifies the height of the barcode in dots. In this case, the barcode will be 5 dots tall.
-
-// 30: This is the print ratio, which influences the overall appearance of the barcode, particularly the thickness of the bars relative to the spaces.
-
-// N: This indicates whether to print the interpretation line (the human-readable text below the barcode):
-
-// N: Do not print the interpretation line.
-// Y: Print the interpretation line.
-// "123": This is the actual data to be encoded in the barcode. In this case, the barcode will represent the string "123".
+// Printer Specifications for ZD888:
+// - Resolution: 203 dpi (8 dots/mm)
+// - Print width: Up to 2.5 inches (508 dots)
+// - Print speed: Up to 4 ips
+// - Supports ZPL programming language
+// - Thermal transfer or direct thermal printing
